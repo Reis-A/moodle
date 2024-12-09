@@ -3112,6 +3112,14 @@ function calendar_import_events_from_ical(iCalendar $ical, int $subscriptionid =
     $icaluuids = [];
     foreach ($ical->components['VEVENT'] as $event) {
         $icaluuids[] = $event->properties['UID'][0]->value;
+       //check if it is a wholeday event
+        $checkhour = date_parse($event->properties['DTSTART'][0]->value)['hour'];
+        if ($checkhour == false) {
+            $timezone = date_default_timezone_get();
+            $date = new DateTime($event->properties['DTEND'][0]->value); 
+            $date->modify('-1 minute');
+            $event->properties['DTEND'][0]->value = $date->format('Ymdhis');
+        }
         $res = calendar_add_icalendar_event($event, null, $subscriptionid, $timezone);
         switch ($res) {
             case CALENDAR_IMPORT_EVENT_UPDATED:
