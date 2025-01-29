@@ -34,7 +34,7 @@ class process_generate_image extends abstract_processor {
     private int $numberimages = 1;
 
     /** @var string Response format: url or b64_json. */
-    private string $responseformat = 'url';
+    private string $responseformat = 'b64_json';
 
     #[\Override]
     protected function query_ai_api(): array {
@@ -42,9 +42,9 @@ class process_generate_image extends abstract_processor {
 
         // If the request was successful, save the URL to a file.
         if ($response['success']) {
-            $fileobj = $this->url_to_file(
+            $fileobj = $this->base64_to_file(
                 $this->action->get_configuration('userid'),
-                $response['sourceurl']
+                $response['base64image']
             );
             // Add the file to the response, so the calling placement can do whatever they want with it.
             $response['draftfile'] = $fileobj;
@@ -104,6 +104,8 @@ class process_generate_image extends abstract_processor {
             'sourceurl' => $bodyobj->data[0]->url,
             'revisedprompt' => $bodyobj->data[0]->revised_prompt,
             'model' => $this->get_model(), // There is no model in the response, use config.
+            'base64image' => $bodyobj->data[0]->b64_json,
+
         ];
     }
 
@@ -151,4 +153,34 @@ class process_generate_image extends abstract_processor {
         $fs = get_file_storage();
         return $fs->create_file_from_string($fileinfo, file_get_contents($tempdst));
     }
+  private function base64_to_file(int $userid, string $base64image): \stored_file {
+        global $CFG;
+
+        require_once("{$CFG->libdir}/filelib.php");
+        $filename = uniqid(mt_rand(), true);
+        $filename .= '.png';
+      
+        $imageData = base64_decode($base64image);
+
+        // Save the image and add the watermark.
+        $tempdst = make_request_directory() . DIRECTORY_SEPARATOR . $filename;
+        file_put_contents($tempdst, $imageData);
+      
+        $image = new ai_image($tempdst);
+        $image->add_watermark()->save();
+
+        // We put the file in the user draft area initially.
+        // Placements (on behalf of the user) can then move it to the correct location.
+        $fileinfo = new \stdClass();
+        $fileinfo->contextid = \context_user::instance($userid)->id;
+        $fileinfo->filearea = 'draft';
+        $fileinfo->component = 'user';
+        $fileinfo->itemid = file_get_unused_draft_itemid();
+        $fileinfo->filepath = '/';
+        $fileinfo->filename = $filename;
+
+        $fs = get_file_storage();
+        return $fs->create_file_from_string($fileinfo, file_get_contents($tempdst));
+    }
+  
 }
