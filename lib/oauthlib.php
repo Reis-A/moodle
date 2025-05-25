@@ -61,19 +61,6 @@ class oauth_helper {
     protected $http;
     /** @var array options to pass to the next curl request */
     protected $http_options;
-    /** @var moodle_url oauth callback URL. */
-    protected $oauth_callback;
-     /** @var string access token. */
-    protected $access_token;
-    /** @var  string access secret token. */
-    protected $access_token_secret;
-    /** @var  string sign secret. */
-    protected $sign_secret;
-    /** @var  string nonce. */
-    protected $nonce;
-    /** @var  int timestamp. */
-    protected $timestamp;
-
 
     /**
      * Contructor for oauth_helper.
@@ -414,6 +401,8 @@ abstract class oauth2_client extends curl {
     protected $scope = '';
     /** @var stdClass $accesstoken access token object */
     protected $accesstoken = null;
+    /** @var string $idtoken ID token string */
+    protected $idtoken = null;
     /** @var string $refreshtoken refresh token string */
     protected $refreshtoken = '';
     /** @var string $mocknextresponse string */
@@ -449,7 +438,8 @@ abstract class oauth2_client extends curl {
         $this->clientsecret = $clientsecret;
         $this->returnurl = $returnurl;
         $this->scope = $scope;
-        $this->accesstoken = $this->get_stored_token();
+	$this->accesstoken = $this->get_stored_token();
+	$this->idtoken = $this->get_stored_idtoken();
     }
 
     /**
@@ -622,7 +612,9 @@ abstract class oauth2_client extends curl {
         // Also add the scopes.
         self::$upgradedcodes[] = $code;
         $this->store_token($accesstoken);
-
+        if (isset($r->id_token)) {
+            $this->store_idtoken($r->id_token);
+        }
         return true;
     }
 
@@ -630,7 +622,8 @@ abstract class oauth2_client extends curl {
      * Logs out of a oauth request, clearing any stored tokens
      */
     public function log_out() {
-        $this->store_token(null);
+	    $this->store_token(null);
+	    $this->store_idtoken(null);
     }
 
     /**
@@ -639,7 +632,7 @@ abstract class oauth2_client extends curl {
      * @param string $url The URL to request
      * @param array $options
      * @param mixed $acceptheader mimetype (as string) or false to skip sending an accept header.
-     * @return string
+     * @return bool
      */
     protected function request($url, $options = array(), $acceptheader = 'application/json') {
         $murl = new moodle_url($url);
@@ -739,16 +732,61 @@ abstract class oauth2_client extends curl {
     }
 
     /**
-     * Get access token object.
+     * Get access token.
      *
      * This is just a getter to read the private property.
      *
-     * @return stdClass
+     * @return string
      */
     public function get_accesstoken() {
         return $this->accesstoken;
     }
+        /**
+     * Store an ID token between requests. Currently uses
+     * session named by get_tokenname, prefixed with "idt-"
+     *
+     * @param string|null $token ID token string to store or null to clear
+     */
+    protected function store_idtoken($token) {
+        global $SESSION;
 
+        $this->idtoken = $token;
+        $name = 'idt-' . $this->get_tokenname();
+
+        if ($token !== null) {
+            $SESSION->{$name} = $token;
+        } else {
+            unset($SESSION->{$name});
+        }
+    }
+
+    /**
+     * Retrieve a stored ID token.
+     *
+     * @return string|null ID token string
+     */
+    protected function get_stored_idtoken() {
+        global $SESSION;
+
+        $name = 'idt-' . $this->get_tokenname();
+
+        if (isset($SESSION->{$name})) {
+            return $SESSION->{$name};
+        }
+
+        return null;
+    }
+
+    /**
+     * Get ID token.
+     *
+     * This is just a getter to read the private property.
+     *
+     * @return string
+     */
+    public function get_idtoken() {
+        return $this->idtoken;
+    }
     /**
      * Get the client ID.
      *
