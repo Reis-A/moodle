@@ -63,6 +63,7 @@ class auth extends \auth_plugin_base {
     public function __construct() {
         $this->authtype = 'oauth2';
         $this->config = get_config('auth_oauth2');
+        $this->customfields = $this->get_custom_user_profile_fields();
     }
 
     /**
@@ -309,7 +310,7 @@ class auth extends \auth_plugin_base {
             return $userdata;
         }
 
-        $allfields = array_merge($this->userfields, $this->get_custom_user_profile_fields());
+        $allfields = array_merge($this->userfields, $this->customfields);
 
         // Go through each field from the external data.
         foreach ($externaldata as $fieldname => $value) {
@@ -619,7 +620,8 @@ class auth extends \auth_plugin_base {
         $this->set_extrauserinfo((array)$rawuserinfo);
 
         complete_user_login($user, $this->get_extrauserinfo());
-        $this->update_picture($user);
+        $SESSION->oauth_issuerid = $issuer->get('id'); //insertedby RES      
+	$this->update_picture($user);
         redirect($redirecturl);
     }
 
@@ -630,7 +632,7 @@ class auth extends \auth_plugin_base {
      * @param stdClass $user A user object
      * @return string[] An array of strings with keys subject and message
      */
-    public function get_password_change_info(stdClass $user): array {
+    public function get_password_change_info(stdClass $user) : array {
         $site = get_site();
 
         $data = new stdClass();
@@ -647,5 +649,34 @@ class auth extends \auth_plugin_base {
             'subject' => $subject,
             'message' => $message
         ];
+    }
+        /**
+     * Hook for logout page https://github.com/jeremyVignelles/moodle/compare/master...feature/oauth2-logout
+     */
+    public function logoutpage_hook() {
+        global $SESSION, $redirect;
+
+        // Only do this if the user is actually logged in via OAuth2 (oauth_issuerid is set)
+        // Note that other auth_providers also check $USER->auth === $this->authtype,
+        // but that doesn't work here due to linked_login.
+        if (isset($SESSION->oauth_issuerid)) {
+            $issuerid = $SESSION->oauth_issuerid;
+            $issuer = new \core\oauth2\issuer($issuerid);
+            $endsession = $issuer->get_endpoint_url('end_session');
+            if ($endsession) {
+                // Uses the end_session_endpoint as the redirect URL to log the user out of the identity provider.
+                // Query string parameters :
+                // - post_logout_redirect_uri : The URI at which the IdP will redirect the user after logout.
+                // - id_token_hint : The ID token.
+		$endsessionurl = new moodle_url($endsession, [ 'post_logout_redirect_uri' => $redirect ]);
+                $client = \core\oauth2\api::get_user_oauth_client($issuer, new moodle_url($redirect));
+                $idtoken = $client->get_idtoken();
+                if ($idtoken !== null) {
+                   $endsessionurl->param('id_token_hint', $idtoken);
+               }
+                $redirect = $endsessionurl->out(false);
+            }
+            unset($SESSION->oauth_issuerid);
+        }
     }
 }
