@@ -126,20 +126,6 @@ class client extends \oauth2_client {
             return [];
         }
         $result = [];
-
-        // Replace the language tag if it appears in the string.
-        $lang = current_language();
-        $tags = ["{lang}", "{LANG}", "{language}", "{LANGUAGE}", '{lan-guage}', '{LAN-GUAGE}'];
-        $langcode = [
-            strtolower(substr($lang, 0, 2)),
-            strtoupper(substr($lang, 0, 2)),
-            strtolower($lang),
-            strtoupper($lang),
-            str_replace('_', '-', strtolower($lang)),
-            str_replace('_', '-', strtoupper($lang)),
-        ];
-        $params = str_replace($tags, $langcode, $params);
-
         parse_str($params, $result);
         return $result;
     }
@@ -313,6 +299,9 @@ class client extends \oauth2_client {
                 $this->store_token($tokensreceived['access_token']);
                 if (!empty($tokensreceived['refresh_token'])) {
                     $this->store_user_refresh_token($tokensreceived['refresh_token']);
+		}
+		if (!empty($tokensreceived['id_token'])) {
+                    $this->store_idtoken($tokensreceived['id_token']);
                 }
                 return true;
             } catch (\moodle_exception $e) {
@@ -495,7 +484,9 @@ class client extends \oauth2_client {
             $systemaccount->set('refreshtoken', $receivedtokens['refresh_token']->token);
             $systemaccount->update();
         }
-
+        if (!empty($tokensreceived['id_token'])) {
+            $this->store_idtoken($tokensreceived['id_token']);
+        }
         return true;
     }
 
